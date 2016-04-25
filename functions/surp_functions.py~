@@ -1,0 +1,242 @@
+# FUNCTIONS TO BUILD SURPRISE
+# Functions in this file are:
+#		- BuildPsth 		(timedata,t_before,t_after,histlength,blankw,rate0):
+#		- GetT      		(SurpriseB,surpmin): 
+#		- BuildSingleSurprise   (psth, rate0, binsize, surplength,t_before):
+#		- BuildSurprise         (hist_times,t_before,base_rate,maxbin,surpmax,blankw):
+#		- BuildSig              (SurpriseData, thresh,blankw,surpmax,nth,nconsecabove,surpmin,nbinsabove):
+#		- IsSig                 (Surp,th,nth,nconsecabove,surpmin,nbinsabove,wb):
+#		- GetLatency		(Surprise, length, maxbin, surpmin, nth, blank_rate):
+
+
+import numpy as np
+from scipy.stats import poisson
+from attrdict import AttrDict
+
+#---------------------------------------------------------------------------------------
+# BUILD PSTH   (blank correction, if less or equal than 2 counts we add 1 spike)
+#---------------------------------------------------------------------------------------
+# In this functions we get the psth bin spike counts for the given times in 1ms bins
+# Bin borders are integer times, e.g. bin 0-1 has spikes >0ms and <1ms
+def BuildPsth(timedata,t_before,t_after,histlength):
+    
+    psths = np.zeros([25,2,histlength-1])
+    bins1w = np.zeros(2)
+    
+    # we multiply by 1000 to get results in msec
+    for w in np.arange(25):
+        bins1wup, bins = np.histogram(timedata[w][0]*1000, bins = np.linspace(-t_before, t_after, histlength))
+        bins1wdn, bins = np.histogram(timedata[w][1]*1000, bins = np.linspace(-t_before, t_after, histlength))
+        
+        psths[w] = [bins1wup,bins1wdn] 
+        
+    return psths
+
+#---------------------------------------------------------------------------------------
+# BUILD Single SURPRISE        (correcting not to get inf logarithm with an epsilon approx 10^-27)
+#---------------------------------------------------------------------------------------
+# Here we build the surprise for a single binsize and a single whisker, for the two directions
+# its a direction x size: 2 x 55 
+def BuildSingleSurprise(psth, rate0, binsize, surplength,t_before):
+    eps=np.finfo(np.float128).eps/1000000000   #this epsilon is used not to get inf when taking log10
+    mu = rate0*binsize       # this is the mean value for the poisson blank, and corresponding binsize
+    counts = np.zeros([2,surplength])
+    Surprise = np.zeros([2,surplength])
+            
+    for j in np.arange(surplength):  
+        i = j + t_before - binsize + 1  #this will make every surprise start at 0-1 ms bin
+        for d in [0,1]:
+            counts[d][j] = sum(psth[d][i:i+binsize])
+            Surprise[d][j] = -np.log10(min(poisson.cdf(counts[d][j],mu)-eps,1-poisson.cdf(counts[d][j],mu)+eps)) 
+    
+    return Surprise
+       
+#---------------------------------------------------------------------------------------
+# BUILD SURPRISE
+#---------------------------------------------------------------------------------------
+# Here we build all the surprises for each whisker and each binsize.
+# Also we build the blank whisker and threshold values and the descriptive structure
+# We compute significant whisker, values, PW and latencies
+def BuildSurprise(hist_times,t_before,base_rate,maxbin,surpmax,surpmin):
+        
+    # hist_times:         the array of spiketimes for each whisker and direction relative to stim
+    # t_before & t_after: how long we want to compute the psths bins (all 1 msec)
+    # base_rate:          rate of a 1ms bin of the blank psth
+    # maxbin:             the number of binning sizes where we compute the surprise, from 1 to maxbin
+    # blankw:             the blank whisker number (changes depending on the experiment)
+    # surpmax:            up to what time we compute surprise (tipically 55ms)
+    # nsizeth:            how many consecutive bins are required to be responsive (tipically 2)
+    # surpmin:            is from the time we consider to look for a response (tipically over 5ms)
+    
+    # we save all in this variable as attr dictionary
+    Surprise = dict()
+    #-------------------------------------
+    # here computing the surprise (from surpmin to surpmax in ms)
+    SurpriseW = {}
+   
+    for w in np.arange(25):
+        Surprisefixbin = {}  #here we store the 25 whiskers
+        
+        for binsize in np.arange(maxbin)+1:
+            Surprisefixbin[binsize] = BuildSingleSurprise(hist_times[w],base_rate,binsize,surpmax,t_before)
+        
+        SurpriseW[w] = Surprisefixbin
+            
+    Surprise = AttrDict({'Data' : SurpriseW})
+    Surprise.update({'logic_tree_data': '[whiskers][binsizes][direction][values] = 25x20x2x'+ str(surpmax-surpmin)})
+
+    return Surprise    
+
+#------------------------------------
+# BUILD SIGNIFICANCE
+#-------------------------------------
+def BuildSig(Surprise,thresh,blankw,nconsecabove,surpmin,nsizesaboveth):
+
+    # here computing significance
+    Sig, SigSizesList , SigTop, PW , PWstrong, SigStrength, SigStrengthNorm= IsSig(Surprise,thresh,blankw,nconsecabove,surpmin,nsizesaboveth)
+										    
+    Surprise.update({'Sig':Sig,'Sig_sizes':SigSizesList,'Sig_top':SigTop,'PW':PW , 'PWstrong': PWstrong})        
+    Surprise.update({'Sig_strength': SigStrength, 'Sig_strength_norm': SigStrengthNorm})       
+    
+    Surprise.update({'logic_tree_significants': '[whiskers][direction] = 25x2'})
+    Surprise.update({'logic_tree_sig_sizes': '[whiskers][binsizes][direction] = 25x20x2'})
+    #-------------------------------------
+    
+    return Surprise
+
+#---------------------------------------------------------------------------------------
+# IS SIGNIFICANT?      (responses below 5% strength not considered) 
+#---------------------------------------------------------------------------------------
+# getting a list of Significant whiskers x directions: 25x2 
+# and the list of binsizes significant values 25x20x2
+# PW values,  Strengths, and Top whiskers values
+def IsSig(Surp,th,wb,nconsecabove,surpmin,nbinsabove):
+    # Surp:    the array of surprise values for each whisker binsize and direction
+    # th:      threshold (tipically the maximum surprise of the blank)
+    # nconsecabove: how many consecutive bins are required to be responsive (tipically 2)
+    # surpmin:  is from the time we consider to look for a response (tipically over 5ms)
+    # nbinsabove:   number of different binnings sizes required to be significant for the whisker to be (tipically 2)
+        
+    Sig = np.zeros([25,2])
+    Sigsizes = np.zeros([25,20,2])
+    SigTop = np.zeros([25,2])
+    nhightot = np.zeros([25,2])
+    SigStrength = np.zeros([25,2])
+    SigStrengthNorm = np.zeros([25,2])
+    
+    #print(th.shape)
+    
+    for w in np.arange(25):
+        #-------------------------------------
+        #computing significance for every binsize and direction for a single whisker
+        consec = np.zeros([20,2])     # this is for computing how many surprise values above threshold are consecutive
+        two_consec = np.zeros([20,2]) # to compute if we consider it significant for each binsize and direction
+        for binsize in np.arange(20)+1:
+            for d in [0,1]:
+                overthresh =  np.where(th[binsize-1]< Surp[w][binsize][d][surpmin:])[0]
+                consecutive = overthresh[1:]-overthresh[:-1]
+                consec[binsize-1][d] = len(np.where(consecutive==1)[0])
+                two_consec[binsize-1][d] = 1 if consec[binsize-1][d] >=nconsecabove else 0
+                       
+        # here we save the significant whiskers for every binsize and direction
+        Sigsizes[w] = two_consec
+        # Here we say if the whisker is significative for the both directions
+        Sig[w] = [1 if sum(two_consec[:,0])>=nbinsabove else 0,1 if sum(two_consec[:,1])>=nbinsabove else 0]  
+        
+        #-------------------------------------
+        # here we compute the strength as the product of tot_binsizes_sig x tot_surprisebins_sig
+        if Sig[w][0]==1:
+            nhightot[w][0] = sum(two_consec[:,0])*sum(consec[:,0]*two_consec[:,0])
+        if Sig[w][1]==1:
+            nhightot[w][1] = sum(two_consec[:,1])*sum(consec[:,1]*two_consec[:,1])
+    
+    #-------------------------------------
+    # here we classify whiskers responding in top=1 as above 50% of maximum for each direction
+    # and =2 of below 20% strength of response in that direction
+    m0 = max(nhightot[:,0])
+    m1=  max(nhightot[:,1])
+    for w in np.arange(25):
+        # classification for high responses
+        SigTop[w] = [1 if nhightot[w][0] > m0/2 else 0,1 if nhightot[w][1] > m1/2 else 0]
+        # classification for low responses
+        if nhightot[w,0] < m0*0.2: SigTop[w][0] = 2
+        if nhightot[w,1] < m1*0.2: SigTop[w][1] = 2
+            
+        SigStrength[w] = [nhightot[w,0],nhightot[w,1]]
+        
+    # normalize each direction
+    if m0+m1>0: SigStrengthNorm = SigStrength/np.array(SigStrength).max()
+    #-------------------------------------
+    # PW is the max of all, PWstrong is direction maximum 0 or 1
+    PW = [np.where(m0==nhightot[:,0])[0][0],np.where(m1==nhightot[:,1])[0][0]]
+    # Selecting PW as blank whisker
+    if m0==0: 
+        PW[0]=wb
+    if m1==0: 
+        PW[1]=wb
+    PWstrong = 0 if m0>m1 else 1
+    #-------------------------------------
+    # False detected if below 5%
+    for w in np.arange(25):
+        for d in [0,1]:
+            if SigStrength[w][d] < max(SigStrength[:,d])/20 :
+                SigStrength[w][d] = 0
+                #SigStrengthNorm[w][d] = 0  # we don't erase this values in case we want to see later
+                SigTop[w][d] = 0
+    #            Sig[w][d] = 0
+              
+    return Sig, Sigsizes, SigTop, PW, PWstrong, SigStrength, SigStrengthNorm
+        
+#---------------------------------------------------------------------------------------
+# GET LATENCY FOR SIGNIFICANT   (we check max, thresh, and 50% thresh, they have to come in order within 5msec)
+#                               (also before the 50% response, surprise has to go half its value: near chance)
+#---------------------------------------------------------------------------------------
+def GetLatency(Surprise, length, maxbin, surpmin, nth, blank_rate):
+
+    # Surprise: surprise info values   
+    # length: the maximum bin to compute surprise
+    # maxbin: number of different binsizes the surprise was computed
+    # surpmin: minimum latency in ms, from where we compute
+    # nth: the factor multiplying the threshold of the significant whiskers over the blank surprise
+                    
+    data = Surprise.Data
+    siglist = Surprise.Sig_sizes
+    sig = Surprise.Sig
+    th = Surprise.Thresh
+    
+    Latency = np.zeros([25,2])
+    
+    for w in np.arange(25):
+        for d in [0,1]:
+            if sig[w][d] == 1: # if whisker and direction is significant, then compute latency
+                minbinglobal = 100
+                for binsize in np.arange(maxbin)+1: # for each binsize we compute the minimum latency
+                    minbin = 100
+                    minbin50 = 100
+                    # compute the first maximum surprise
+                    maxsurpbin = np.where( data[w][binsize][d]==max(data[w][binsize][d]) )[0][0]
+                    for b in np.arange(surpmin-1,length)[::-1]:  #we decrease -1 for the way np.arange creates arrays
+                                                              # and search backwards to get minbin first than minbin50  
+                        #correct for saturating threshold, max is 27
+                        if th[binsize][d]*nth>27:
+                            th[binsize][d]=27/nth
+                        #compute the big threshold surprise, while it is at least preceding the max by 5ms
+                        if data[w][binsize][d][b]-th[binsize][d]*nth>0 and b<minbin and maxsurpbin-b<5 and maxsurpbin-b>=0:
+                            minbin=b
+                        #compute the small threshold surprise, , while it is at least preceding the bigthsurp by 5ms
+                        if data[w][binsize][d][b]-th[binsize][d]*nth*0.5>0 and b<minbin50 and minbin-b<5 and minbin-b>=0:
+                            minbin50=b
+                    # if small threshold surprise does not preceed big threshold, we keep big threshold
+                    if minbin-minbin50 > 5:
+                        minbin50 = minbin
+                    # if before the bin selected it does not return to slightly below chance level, keep the big
+                    if min(data[w][binsize][d][0:minbin50])>th[binsize][d]:
+                        minbin50=minbin
+                    
+                    # Here we compare with global min    
+                    if minbin50<minbinglobal: 
+                        minbinglobal=minbin50
+                #print(minbinglobal)
+                Latency[w][d] = minbinglobal+1  # we add 1 to be like Le Cam paper criteria
+    
+    return Latency  # we return the value of the left border of the last included bin in the sliding window  

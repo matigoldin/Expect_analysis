@@ -1,0 +1,14 @@
+                # correcting bad assinging of PW when none Significant whiskers
+#                 PWs = Surprise[n].surprise_data.PW
+#                 Sigs = Surprise[n].surprise_data.Sig
+#                 if sum(Sigs[:,0])==0:
+#                     PW0 = 11   
+#                 else:
+#                     PW0=PWs[0]
+#                 if sum(Sigs[:,1])==0:
+#                     PW1 = 11   
+#                 else:
+#                     PW1 = PWs[1]
+#                 data_aux = Surprise[n].surprise_data
+#                 data_aux.update({'PW':(PW0,PW1)}) 
+#                 Surprise[n].update({'surprise_data': data_aux})

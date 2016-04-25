@@ -1,0 +1,52 @@
+# FUNCTIONS SURPRISE FOR single neuron
+
+from matplotlib.pyplot import*
+from numpy import*
+
+#----------------------------------------------------------------------------------------
+# DISPLAY WAVEFORM
+#----------------------------------------------------------------------------------------
+def display_wave(wavedata,  fig, inner_grid):    
+
+    ax= Subplot(fig, inner_grid[1])
+
+    ax.set_xticks([0,16,32,48])
+    ax.set_ylim([-1.3,1.25])
+   
+    ax.set_xlabel('Sample number at 30kHz',size=8)
+    ax.set_ylabel('Normalized waveform',size=8)
+    
+    m =-wavedata.bigwave/min(wavedata.bigwave)
+    s =-wavedata.bigwavestd/min(wavedata.bigwave)
+
+    ax.plot(arange(48),m,color='red',linewidth = 3 )
+    ax.plot(arange(48),m+s,color='gray',linewidth = 2)
+    ax.plot(arange(48),m-s,color='gray',linewidth = 2)     
+    
+    ax.plot([0,48],[0,0],color='k',linewidth = 1)     
+    
+    ax.plot([25,25+15],[-1,-1],color='k',linewidth = 2)     
+    ax.text(27,-0.9,'0.5ms', size = 8, fontweight='bold')
+    
+    cross = wavedata.params[1]
+    crossrel = wavedata.params[2]
+    peaksV = wavedata.params[3]
+    peaks = wavedata.params[4]
+    peaksrel = wavedata.params[5]
+    mins = wavedata.params[6]
+
+    ax.plot(cross,[0,0,0],'o',markersize=4,  label = 'cross')
+    ax.plot(peaks,-np.array(peaksV),'o',markersize=4,  label = 'peak')
+    ax.plot(mins[0],-1,'o',markersize=4)
+    
+    if wavedata.clus_label == 0:
+        lab = 'Regular Spiker'
+    else:
+        lab = 'Fast Spiker'
+    
+    ax.set_title(lab, size = 12, fontweight='bold')
+    
+    ax.tick_params( labelsize=8)
+
+    
+    fig.add_subplot(ax)
