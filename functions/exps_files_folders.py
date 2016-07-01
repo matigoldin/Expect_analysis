@@ -19,8 +19,11 @@ def eff():
       m864 = ['m8s'+str(s) for s in np.arange(8)+1]
       m964 = ['m9s'+str(s) for s in np.arange(8)+1]
       m1064 = ['m10s'+str(s) for s in np.arange(8)+1]
+      m567 = [str('m567s') + str(s) for s in np.arange(8)+1]
+      
 
-      M = [m164,m264,m364,m464,m564,m664,m764,m864,m964,m1064]
+
+      M = [m164,m264,m364,m464,m564,m664,m764,m864,m964,m1064,m567]
 
       shanks = ['_ele01_ele08.kwik',
                 '_ele09_ele16.kwik',
@@ -48,6 +51,8 @@ def eff():
       for reps in np.arange(7):
           files[exp][reps+1] = [ base[exp][reps]+shanks[i] for i in np.arange(8)]
 
+      base[exp][8] = 'EXPECT-151217-567'
+      files[exp][8] = [ base[exp][8]+shanks[i] for i in np.arange(8)]
       #--------------------------------------------------------------------------------
       # Here I create my dictionary of experiments
       Expe={}
@@ -74,6 +79,15 @@ def eff():
               Expe[exp][meas] = files[exp][m+1][i]
               i+=1
           m+=1
+      exp=2
+      
+      for meas in M[-1]:
+            i=0
+            Expe[2][meas] = files[exp][8][i]
+            i+=1
+      
+
+          
 
       #--------------------------------------------------------------------------------
       #Stim files
@@ -82,4 +96,8 @@ def eff():
           timefiles[exp] = [base[exp][rep-1][:-1] + 'times-' + str(rep) + '.txt' for rep in files[1]]
           eptimefiles[exp] = [base[exp][rep-1][:-1] + 'ep_times-' + str(rep) + '.txt' for rep in files[1]] 
 
-      return Expe, stimfiles, timefiles, eptimefiles
+      stimfiles[2][7] = base[2][8][:-3]  + str(567) + '-stims.txt'
+      timefiles[2][7] = base[2][8][:-3]  + str(567) + '-times.txt'
+      eptimefiles[2][7] = base[2][8][:-3] + '567-ep_times.txt'
+            
+      return Expe, stimfiles, timefiles, eptimefiles, M

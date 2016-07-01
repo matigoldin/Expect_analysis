@@ -19,8 +19,9 @@ BuildPSTH:           fills the dictionary created with the previous function his
 from attrdict import AttrDict
 import numpy as np
 from phy.io import KwikModel
+import os as os
 
-
+import matplotlib.pyplot as plt
 
 #---------------------------------------------------------
 # GET EPDURATION
@@ -51,7 +52,7 @@ def get_stimtimes(stimfile,timefile):
 #---------------------------------------------------------
 # BUILD DICT STIM, reads stims and times of .txt files of experiments
 #---------------------------------------------------------
-def build_dict_stim(stimfile, timefile, epdurationfile):
+def build_dict_stim(stimfile, timefile, epdurationfile, FC_ep):
 
     stims, times = get_stimtimes(stimfile,timefile)
     #------------------------------------------
@@ -70,12 +71,13 @@ def build_dict_stim(stimfile, timefile, epdurationfile):
     ep_duration = get_ep_duration(epdurationfile)
     ####
     # for the formatting I have now:           #####################X   XXXXXXXXXXXXXXXXXX
-    ep_length = ep_duration[6]
-    
+    ep_length = ep_duration[0]
+    ep1=0
+    new=0
     ###
     #------------------------------------------
     # starting times of each stimulus
-    starts = np.zeros([episodes, stims_ep])
+    starts = np.zeros([episodes, stims_ep]) + FC_ep*3100   # each FC episode is 3.1 sec
     tot_stims = episodes*stims_ep
 
     st_count=0
@@ -83,8 +85,18 @@ def build_dict_stim(stimfile, timefile, epdurationfile):
         if t!='':
             st = st_count % stims_ep
             ep = st_count // stims_ep 
-            starts[ep,st] = float(t) + ep*ep_length
+            starts[ep,st] = float(t) + (ep-new)*ep_length + ep1
             st_count+=1
+        else:
+            st_count = (ep+1)*stims_ep          #correct for episodes with less stimuli for concatenated files
+            if ep==29:
+                ep_length = ep_duration[1]
+                ep1= ep_duration[2]
+                new=30
+            
+    #for ep in np.arange(28,46,1):
+    #    plt.plot(starts[ep,:], 'o')
+    #print(starts[45,20])
     #------------------------------------------
     # stims        
     st_pad = np.zeros([episodes,stims_ep],dtype=int) # 1 row, 2 arc, 3 pad
@@ -261,13 +273,18 @@ def BuildPSTH(Stims, Spikes, sampling_freq, exp, meas):
         
         #loop episodes and stims_per_episode, and populate the histograms
         for ep in np.arange(Stims.episodes):
-            for se in np.arange(Stims.stims_ep):
+            if ep<30:
+                stims = 82
+            else:
+                stims = 28
+            for se in np.arange(stims):#np.arange(Stims.stims_ep):
                 
                 code = str(int(Stims.st_ctrl[ep][se]))
                 c = str(Stims.st_logic.ctrl[code])
                                 
                 if code=='0':
                     t_after=500
+                    start = Stims.st_times[ep][se]
                     if len(spikes[(start <= spikes) * (spikes <= start + t_after)])>0:
                         histo[c].extend(spikes[(start <= spikes) * (spikes <= start + t_after)]-start)
                         histo['Counts'][c] +=  len(spikes[(start <= spikes) * (spikes <= start + t_after)])
@@ -290,3 +307,116 @@ def BuildPSTH(Stims, Spikes, sampling_freq, exp, meas):
         PSTH_times[codename] = histo
        
     return PSTH_times
+
+
+#----------------------------------------------------------------------------------------
+# FCsequence
+#----------------------------------------------------------------------------------------
+def FCsequence(episodes):
+
+    here = os.getcwd()
+    textname =  here + '/../functions/random-FC-sequence.txt'
+    
+    txt_data = np.array(np.loadtxt(textname)[0:50*episodes])
+
+    #txt_out = np.append((txt_data[:,0]-1)*5+txt_data[:,1].T,,axis=1)
+
+    txt_out = np.append(     np.array( [ (txt_data[:,0]-1)*5+txt_data[:,1]-1 ]).T       ,  (np.array(  [txt_data[:,2]]     )-1).T      ,axis=1)
+       
+    return txt_out.reshape((episodes,50,2))
+
+    
+#----------------------------------------------------------------------------------------
+# FCtimes
+#----------------------------------------------------------------------------------------
+def FCtimes():
+
+    times=np.array([101.667,
+            151.7,
+            201.667,
+            251.7,
+            301.733,
+            351.667,
+            401.7,
+            451.633,
+            501.667,
+            551.7,
+            601.633,
+            651.7,
+            701.633,
+            751.667,
+            801.7,
+            851.633,
+            901.667,
+            951.7,
+            1001.633,
+            1051.667,
+            1101.633,
+            1151.667,
+            1201.7,
+            1251.633,
+            1301.667,
+            1351.6,
+            1401.633,
+            1451.667,
+            1501.6,
+            1551.667,
+            1601.6,
+            1651.633,
+            1701.667,
+            1751.6,
+            1801.633,
+            1851.567,
+            1901.6,
+            1951.633,
+            2001.6,
+            2051.633,
+            2101.567,
+            2151.6,
+            2201.633,
+            2251.567,
+            2301.6,
+            2351.633,
+            2401.567,
+            2451.633,
+            2501.567,
+            2551.6])
+    return times
+
+#----------------------------------------------------------------------------------------
+# FCspikes
+#----------------------------------------------------------------------------------------
+
+def FC_spikes(FCtimes, FCsequence, spikes, t_before, t_after, starts, stops):
+    """
+    FCtimes (stimtimes)     : a list of the times the stimulus occurred for each whisker 
+    spikes        : an array that contains the spike times (s)
+        
+    t_before      : duration before the stim (positive, s)
+    t_after       : duration after the stim (positive, s)
+
+    starts        : the start of the F sweeps
+    stops         : the stops of the F sweeps
+    """
+    
+    stim_samp = 1/.0009997575757
+    
+    PSTH_spike_counts = np.array((25,2), dtype='int')
+
+    for ep in FCsequence:
+        for stim in arange(50):      # we have 50 stims per episode
+            timeUP = FCtimes[stim] + ep * 3100
+            w , z = FCsequence
+            PSTH_spike_counts[w,z] += len(spikes[(timeUP - t_before < spikes) * (spikes < timeUP + t_after)])    # count spikes that are within PSTH window of stimtimes
+
+    for w in arange(25):       # we fill 
+        PSTH_spike_times[w] =  np.zeros(PSTH_spike_counts[w][0]), np.zeros(PSTH_spike_counts[w][1])
+    
+    for ep in FCsequence:
+        for stim in arange(50):      # we have 50 stims per episode
+            timeUP = FCtimes[stim] + ep * 3100
+            w , z = FCsequence
+            PSTH_spike_times[w,z] = spikes[(timeUP - t_before < spikes) * (spikes < timeUP + t_after)] # count spikes that are within PSTH window of stimtimes
+            
+                
+    return PSTH_spike_counts, PSTH_spike_times
