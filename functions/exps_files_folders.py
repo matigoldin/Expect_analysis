@@ -54,7 +54,18 @@ def eff():
       base[exp][8] = 'EXPECT-151217-567'
       files[exp][8] = [ base[exp][8]+shanks[i] for i in np.arange(8)]
       #--------------------------------------------------------------------------------
-      # Here I create my dictionary of experiments
+      exp = 11
+      base[exp] = ['EXPECT-160802-'+str(i) for i in np.arange(1)+1]
+      files[exp] ={}
+      for reps in np.arange(1):
+          files[exp][reps+1] = [ base[exp][reps]+shanks[i] for i in np.arange(8)]
+
+      #--------------------------------------------------------------------------------
+
+      
+
+
+# Here I create my dictionary of experiments
       Expe={}
       for num in ExpeNum: 
           Expe[num] = dict()
@@ -83,9 +94,13 @@ def eff():
       
       for meas in M[-1]:
             i=0
-            Expe[2][meas] = files[exp][8][i]
+            Expe[2][meas] = files[exp][11][i]
             i+=1
-      
+
+      for meas in M[-1]:
+            i=0
+            Expe[11][meas] = files[exp][11][i]
+            i+=1
 
           
 

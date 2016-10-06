@@ -49,10 +49,12 @@ def get_stimtimes(stimfile,timefile):
     times.close()
     
     return stimdata, timedata
+
+
 #---------------------------------------------------------
 # BUILD DICT STIM, reads stims and times of .txt files of experiments
 #---------------------------------------------------------
-def build_dict_stim(stimfile, timefile, epdurationfile, FC_ep):
+def build_dict_stim2(stimfile, timefile, ep_duration, FC_ep):
 
     stims, times = get_stimtimes(stimfile,timefile)
     #------------------------------------------
@@ -68,10 +70,11 @@ def build_dict_stim(stimfile, timefile, epdurationfile, FC_ep):
     print('   Total stims per episode: ', stims_ep)        
     #------------------------------------------
     # get episode duration
-    ep_duration = get_ep_duration(epdurationfile)
+    #ep_duration = get_ep_duration(epdurationfile)
     ####
     # for the formatting I have now:           #####################X   XXXXXXXXXXXXXXXXXX
-    ep_length = ep_duration[0]
+    #ep_length = ep_duration[0]
+    ep_length = ep_duration/30
     ep1=0
     new=0
     ###
@@ -89,10 +92,10 @@ def build_dict_stim(stimfile, timefile, epdurationfile, FC_ep):
             st_count+=1
         else:
             st_count = (ep+1)*stims_ep          #correct for episodes with less stimuli for concatenated files
-            if ep==29:
-                ep_length = ep_duration[1]
-                ep1= ep_duration[2]
-                new=30
+            #if ep==29:
+            #    ep_length = ep_duration[1]
+            #    ep1= ep_duration[2]
+            #    new=30
             
     #for ep in np.arange(28,46,1):
     #    plt.plot(starts[ep,:], 'o')
@@ -137,7 +140,117 @@ def build_dict_stim(stimfile, timefile, epdurationfile, FC_ep):
 
                 if line[5]=='ISI_10': st_isi[ep,st]=10
                 elif line[5]=='ISI_20': st_isi[ep,st]=20
-                elif line[5]=='ISI_50': st_isi[ep,st]=50
+                #elif line[5]=='ISI_50': st_isi[ep,st]=50
+                elif line[5]=='ISI_2': st_isi[ep,st]=2
+                    
+                if line[7]=='Normal': st_ctrl[ep,st]=10
+                elif line[7][0:5]=='Ctrl1': st_ctrl[ep,st]=1
+                elif line[7][0:5]=='Ctrl2': st_ctrl[ep,st]=2
+                elif line[7][0:5]=='Ctrl3': st_ctrl[ep,st]=3
+                elif line[7][0:5]=='Ctrl4': st_ctrl[ep,st]=4
+
+                st+=1
+                if st%stims_ep==0:
+                    st=0
+                    ep+=1
+
+    Stim_dict = AttrDict({'st_logic':st_logic, 'episodes': episodes  ,'stims_ep':stims_ep  ,'st_times': starts})
+    Stim_dict.update({'st_isi':st_isi,'st_rep':st_rep,'st_types':st_types,'st_ctrl': st_ctrl,'st_pad':st_pad})
+    
+    return Stim_dict
+
+
+
+#---------------------------------------------------------
+# BUILD DICT STIM, reads stims and times of .txt files of experiments
+#---------------------------------------------------------
+def build_dict_stim(stimfile, timefile, epdurationfile, FC_ep):
+
+    stims, times = get_stimtimes(stimfile,timefile)
+    #------------------------------------------
+    # count number of episodes
+    episodes=1
+    stims_ep=0
+    for time in times[:-1]:             #last line is blank, we skip it
+        if time == '': 
+            episodes+=1
+        if episodes ==1:
+            stims_ep+=1
+    print('   Total episodes: ', episodes)        
+    print('   Total stims per episode: ', stims_ep)        
+    #------------------------------------------
+    # get episode duration
+    ep_duration = get_ep_duration(epdurationfile)
+    ####
+    # for the formatting I have now:           #####################X   XXXXXXXXXXXXXXXXXX
+    ep_length = ep_duration[0]
+    ep1=0
+    new=0
+    ###
+    #------------------------------------------
+    # starting times of each stimulus
+    starts = np.zeros([episodes, stims_ep]) + FC_ep*3100   # each FC episode is 3.1 sec
+    tot_stims = episodes*stims_ep
+
+    st_count=0
+    for t in times[:-1]:
+        if t!='':
+            st = st_count % stims_ep
+            ep = st_count // stims_ep 
+            starts[ep,st] = float(t) + (ep-new)*ep_length + ep1
+            st_count+=1
+        else:
+            st_count = (ep+1)*stims_ep          #correct for episodes with less stimuli for concatenated files
+            #if ep==29:
+            #    ep_length = ep_duration[1]
+            #    ep1= ep_duration[2]
+            #    new=30
+            
+    #for ep in np.arange(28,46,1):
+    #    plt.plot(starts[ep,:], 'o')
+    #print(starts[45,20])
+    #------------------------------------------
+    # stims        
+    st_pad = np.zeros([episodes,stims_ep],dtype=int) # 1 row, 2 arc, 3 pad
+    st_types = np.zeros([episodes,stims_ep],dtype=int) # 1 hold, 2 pass, 3 release        
+    st_isi = np.zeros([episodes,stims_ep],dtype=int) # 10 , 20, 50
+    st_rep = np.zeros([episodes,stims_ep],dtype=int) # 2, 5, 10
+    st_ctrl = np.zeros([episodes,stims_ep],dtype=int) # 0, blank, 1 ctrl1, 2 ctrl2, 3 ctrl3, 10 normal 
+    # dictionary of stims
+    st_logic = {} 
+    st_logic['pad'] = {'1' : 'ROW' , '2' : 'ARC'  , '3': 'PAD' }
+    st_logic['types'] = { '1':'hold', '2': 'pass'  , '3': 'release'}
+    st_logic['ctrl'] = {'0' : 'BLANK', '1' : 'Ctrl1', '2' : 'Ctrl2', '3' : 'Ctrl3', '10' : 'Normal'}
+
+    ep=0
+    st=0
+    # get stims
+    for stim in stims[:-3]:           #last three lines useless
+        line = stim.split()
+        if line and ep<episodes:
+
+            if line[1]=='BLANK':
+                st+=1
+                if st%stims_ep==0:
+                    st=0
+                    ep+=1
+            elif len(line)>3:
+                if line[1][1:4]=='ROW': st_pad[ep,st]=1
+                elif line[1][1:4]=='ARC': st_pad[ep,st]=2
+                elif line[1][1:4]=='PAD': st_pad[ep,st]=3
+
+                if line[1][5:-1]=='Hold': st_types[ep,st]=1
+                elif line[1][5:-1]=='Pass': st_types[ep,st]=2
+                elif line[1][5:-1]=='Release': st_types[ep,st]=3
+
+                if line[3]=='REP_2': st_rep[ep,st]=2
+                elif line[3]=='REP_5': st_rep[ep,st]=5
+                elif line[3]=='REP_10': st_rep[ep,st]=10
+
+                if line[5]=='ISI_10': st_isi[ep,st]=10
+                elif line[5]=='ISI_20': st_isi[ep,st]=20
+                #elif line[5]=='ISI_50': st_isi[ep,st]=50
+                elif line[5]=='ISI_2': st_isi[ep,st]=2    
                     
                 if line[7]=='Normal': st_ctrl[ep,st]=10
                 elif line[7][0:5]=='Ctrl1': st_ctrl[ep,st]=1
@@ -161,7 +274,8 @@ def build_dict_stim(stimfile, timefile, epdurationfile, FC_ep):
 import copy as cp
 
 def build_hist_dict():
-    isis = [10,20,50]
+    #isis = [10,20,50]
+    isis = [10,20,2]
     reps = [2,5,10]
     pads = ['ARC','ROW','PAD']
     types = ['hold','pass','release']
@@ -272,13 +386,17 @@ def BuildPSTH(Stims, Spikes, sampling_freq, exp, meas):
         spikes = Spikes[neuron].spike_times*1000 #(want them in ms)
         
         #loop episodes and stims_per_episode, and populate the histograms
-        for ep in np.arange(Stims.episodes):
+        for ep in np.arange(Stims.episodes)[:]:
             if ep<30:
                 stims = 82
             else:
                 stims = 28
+
+            #print('Episode: ',ep)
+            
+            stims=8
             for se in np.arange(stims):#np.arange(Stims.stims_ep):
-                
+                #print('se     :',se)
                 code = str(int(Stims.st_ctrl[ep][se]))
                 c = str(Stims.st_logic.ctrl[code])
                                 
@@ -300,6 +418,7 @@ def BuildPSTH(Stims, Spikes, sampling_freq, exp, meas):
                     start = Stims.st_times[ep][se]
                               
                     t_after = 500*r
+                    
                     if len(spikes[(start <= spikes) * (spikes <= start + t_after)])>0:
                         histo[c][t][p][r][i].extend(spikes[(start <= spikes) * (spikes <= start + t_after)]-start)
                         histo['Counts'][c][t][p][r][i]  += len((spikes[(start <= spikes) * (spikes <= start + t_after)]))
